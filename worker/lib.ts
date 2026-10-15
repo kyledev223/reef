@@ -59,9 +59,3 @@ export function fmtPct(p: number) {
   const r = Math.abs(p) >= 100 ? Math.round(p) : Math.round(p * 10) / 10;
   return `${r > 0 ? "+" : r < 0 ? "−" : ""}${Math.abs(r).toLocaleString("en-US")}%`;
 }
-
-export async function getSolUsd(): Promise<number | null> {
-  const kv = await db.keyValue.findUnique({ where: { key: "solUsd" } });
-  const v = (kv?.value as { usd?: number } | null)?.usd;
-  return typeof v === "number" ? v : null;
-}

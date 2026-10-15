@@ -5,6 +5,9 @@
 
 export const ENDPOINTS = {
   coingecko: "https://api.coingecko.com/api/v3",
+  /** Fallback SOL/USD spot prices (no key) for when CoinGecko rate-limits shared hosting. */
+  coinbaseSolUsd: "https://api.coinbase.com/v2/prices/SOL-USD/spot",
+  krakenSolUsd: "https://api.kraken.com/0/public/Ticker?pair=SOLUSD",
   dexscreener: "https://api.dexscreener.com",
   /** pump.fun's own image + metadata upload (IPFS), as used by pump.fun's site. */
   pumpIpfs: "https://pump.fun/api/ipfs",
@@ -28,6 +31,8 @@ export const DEFAULT_RPC: Record<SolanaNetwork, string> = {
 export const PUMP_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
 /** pump.fun tokens use 6 decimals. */
 export const PUMP_TOKEN_DECIMALS = 6;
+/** Every pump.fun token has a fixed supply of 1 billion. */
+export const PUMP_TOTAL_SUPPLY = 1_000_000_000;
 
 export const explorerUrl = (network: SolanaNetwork, kind: "token" | "tx" | "account", id: string) =>
   `https://solscan.io/${kind}/${id}${network === "devnet" ? "?cluster=devnet" : ""}`;

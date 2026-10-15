@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { APP } from "@/config/app";
-import { CreatureDetails, CreatureHeader } from "@/components/CreatureDetails";
+import { CopyAddress } from "@/components/CopyAddress";
+import {
+  CreatureHeader, EffectsCard, HeadlineStats, LinksRow, MarketCard, NewsCard, OriginCard, SpeciesCard,
+} from "@/components/CreatureDetails";
 import { CreaturePortrait } from "@/components/CreaturePortrait";
 import { SiteHeader } from "@/components/SiteHeader";
 import { solanaNetwork } from "@/lib/solana/server";
@@ -23,20 +26,36 @@ export default async function CreaturePage({ params }: { params: Promise<{ id: s
     <div className="page">
       <SiteHeader network={solanaNetwork()} />
       <main className="page-main creature-page">
-        <section className="creature-hero glass">
-          <CreaturePortrait
-            spec={{ family: c.family, variantIndex: c.variantIndex, palette: c.palette, hue: c.hue, patternSeed: c.patternSeed }}
-            logoUrl={`/api/logo/${c.id}`}
-            size={240}
-            label={`${detail.species.variant} creature for $${c.ticker}`}
-          />
-          <div className="creature-hero-text">
-            <CreatureHeader detail={detail} />
-            <Link className="btn-secondary" href="/">← Back to the city</Link>
+        <section className="profile-hero glass">
+          <div className="profile-portrait">
+            <CreaturePortrait
+              spec={{ family: c.family, variantIndex: c.variantIndex, palette: c.palette, hue: c.hue, patternSeed: c.patternSeed }}
+              logoUrl={`/api/logo/${c.id}`}
+              size={250}
+              label={`${detail.species.variant} creature for $${c.ticker}`}
+            />
+            <span className="profile-species">{detail.species.variant}</span>
           </div>
+          <div className="profile-main">
+            <CreatureHeader detail={detail} />
+            <CopyAddress address={detail.mint} explorer={detail.explorer.token} />
+            <div className="profile-actions">
+              <LinksRow detail={detail} />
+              <Link className="btn-secondary" href="/">← Back to the city</Link>
+            </div>
+          </div>
+          <HeadlineStats detail={detail} />
         </section>
-        <div className="creature-grid">
-          <CreatureDetails detail={detail} />
+        <div className="profile-grid">
+          <div className="profile-col">
+            <MarketCard detail={detail} page />
+            <OriginCard detail={detail} showLinks={false} />
+          </div>
+          <div className="profile-col">
+            <SpeciesCard detail={detail} />
+            <EffectsCard detail={detail} />
+            <NewsCard detail={detail} />
+          </div>
         </div>
       </main>
       <footer className="page-footer">{APP.disclaimer} · {APP.dataCredit}</footer>

@@ -1,12 +1,14 @@
 /**
  * Health check for the deployed site: open /api/health to see whether the database, the Solana
- * RPC endpoints, the pump.fun SDK and pump.fun's upload service work from the server.
+ * RPC endpoints, the pump.fun SDK, pump.fun's upload service and the SOL/USD price work from the
+ * server, and when the background jobs last ran.
  * Shows hostnames only, never API keys.
  */
 import { Connection, Keypair } from "@solana/web3.js";
 import { ENDPOINTS } from "@/config/data";
 import { db } from "@/lib/db";
 import { pumpSdk } from "@/lib/hatch/pumpSdk";
+import { fetchSolPriceUsd } from "@/lib/sources/coingecko";
 import { classifyRpcError, rpcLabel, rpcUrls, solanaNetwork } from "@/lib/solana/server";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +28,7 @@ export async function GET() {
   const network = solanaNetwork();
   const urls = rpcUrls();
 
-  const [database, rpc, sdk, pumpUpload] = await Promise.all([
+  const [database, rpc, sdk, pumpUpload, solPrice, lastTick] = await Promise.all([
     timed(() => db.$queryRaw`SELECT 1`).then((r) => (r.ok ? { ok: true, ms: r.ms } : r)),
     Promise.all(
       urls.map(async (url) => {
@@ -46,6 +48,11 @@ export async function GET() {
       const res = await fetch(ENDPOINTS.pumpIpfs, { method: "OPTIONS", signal: AbortSignal.timeout(10_000) });
       return res.status;
     }).then((r) => (r.ok ? { ok: r.value < 500, ms: r.ms, status: r.value } : r)),
+    timed(fetchSolPriceUsd).then((r) => (r.ok ? { ok: true, ms: r.ms, usd: r.value } : r)),
+    db.keyValue
+      .findUnique({ where: { key: "tick:last" } })
+      .then((kv) => (kv?.value as { at?: number } | null)?.at ?? null)
+      .catch(() => null),
   ]);
 
   const rpcOk = rpc.some((r) => r.ok);
@@ -57,11 +64,19 @@ export async function GET() {
     if (!r.ok && r.problem === "rate-limited") hints.push(`${r.endpoint} is rate-limiting this server.`);
     if (!r.ok && (r.problem === "unauthorized" || r.problem === "forbidden")) hints.push(`${r.endpoint} refused the request: check the API key in SOLANA_RPC_URL.`);
   }
+  if (!solPrice.ok) hints.push("No SOL/USD price could be fetched, so dollar market caps can't be shown.");
+  if (process.env.VERCEL && (!lastTick || Date.now() - lastTick > 60 * 60_000)) {
+    hints.push("Background jobs haven't run in the last hour (they run after page visits and from the daily cron).");
+  }
   if (!sdk.ok) hints.push("The pump.fun SDK failed to load on the server; launches can't be built.");
 
   const ok = database.ok && rpcOk && sdk.ok;
   return Response.json(
-    { ok, network, database, rpc, pumpSdk: sdk, pumpUpload, hints },
+    {
+      ok, network, database, rpc, pumpSdk: sdk, pumpUpload, solPrice,
+      backgroundJobs: { lastRun: lastTick ? new Date(lastTick).toISOString() : null },
+      hints,
+    },
     { status: ok ? 200 : 503, headers: { "cache-control": "no-store" } },
   );
 }

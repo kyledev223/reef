@@ -3,7 +3,7 @@
  * the browser never talks to market APIs or Solana RPC for reef data.
  */
 import { POLLING, TRACKING, WORLD } from "@/config/balance";
-import { NETWORK_LABEL, explorerUrl, type SolanaNetwork } from "@/config/data";
+import { NETWORK_LABEL, PUMP_TOTAL_SUPPLY, explorerUrl, type SolanaNetwork } from "@/config/data";
 import { db } from "@/lib/db";
 import {
   isNewArrival, marketModifiers, moodIntensity, rarityFor, speedModFor, tierFor,
@@ -11,6 +11,7 @@ import {
 } from "@/lib/market/layer";
 import { familyInfo, matchups, speciesFor, type FamilyId } from "@/lib/market/species";
 import { solanaNetwork } from "@/lib/solana/server";
+import { solUsdNow } from "@/lib/solUsd";
 import { habitatFor, type ZoneId } from "@/lib/zones";
 import type { Coin } from "@/generated/prisma/client";
 
@@ -149,6 +150,7 @@ export interface CoinDetail {
   hatchedAt: string;
   links: { twitter: string | null; telegram: string | null; website: string | null };
   explorer: { token: string; launchTx: string; creator: string };
+  curveComplete: boolean;
   species: {
     familyLabel: string;
     variant: string;
@@ -175,6 +177,17 @@ export interface CoinDetail {
   events: { id: string; at: string; message: string }[];
 }
 
+/**
+ * Dollar figures for a coin. On the bonding curve they follow the latest curve reading at the
+ * current SOL price, so they show even before the worker has stored them; graduated coins use
+ * DexScreener's figures.
+ */
+function liveUsd(c: Pick<Coin, "curveComplete" | "marketCapSol" | "marketCapUsd" | "priceUsd">, solUsd: number | null): { marketCapUsd: number | null; priceUsd: number | null } {
+  if (c.curveComplete || c.marketCapSol == null || !solUsd) return { marketCapUsd: c.marketCapUsd, priceUsd: c.priceUsd };
+  const marketCapUsd = c.marketCapSol * solUsd;
+  return { marketCapUsd, priceUsd: marketCapUsd / PUMP_TOTAL_SUPPLY };
+}
+
 function dexMissing(c: Coin): string {
   if (c.network !== "mainnet-beta") return "DexScreener doesn't index Solana devnet, so DEX liquidity and volume aren't available for test creatures.";
   if (!c.dexUpdatedAt) return `Not checked yet. DexScreener is checked about every ${POLLING.dexPairsMs / 60_000} minutes.`;
@@ -192,10 +205,12 @@ export async function getCoinDetail(id: string): Promise<CoinDetail | null> {
   const network = c.network as SolanaNetwork;
 
   const since = new Date(Date.now() - TRACKING.snapshotFullResHours * 3_600_000);
-  const [snaps, events] = await Promise.all([
+  const [snaps, events, solUsd] = await Promise.all([
     db.coinSnapshot.findMany({ where: { coinId: id, at: { gte: since } }, orderBy: { at: "asc" }, select: { at: true, marketCapUsd: true } }),
     db.worldEvent.findMany({ where: { coinId: id }, orderBy: { at: "desc" }, take: 6 }),
+    solUsdNow(),
   ]);
+  const { marketCapUsd, priceUsd } = liveUsd(c, solUsd);
   const f = (value: number | string | null | undefined, missing: string): StatField =>
     value == null ? { value: null, missing } : { value };
   const hoursOld = (Date.now() - c.firstSeenAt.getTime()) / 3_600_000;
@@ -216,21 +231,22 @@ export async function getCoinDetail(id: string): Promise<CoinDetail | null> {
       launchTx: explorerUrl(network, "tx", c.launchSignature),
       creator: explorerUrl(network, "account", c.creatorWallet),
     },
+    curveComplete: c.curveComplete,
     species: {
       familyLabel: fam.label,
       variant: sp.variant,
       blurb: fam.blurb,
       strongVs: familyInfo(mu.strongVs).label,
       weakVs: familyInfo(mu.weakVs).label,
-      tierLabel: tierFor(c.marketCapUsd)?.label ?? null,
+      tierLabel: tierFor(marketCapUsd)?.label ?? null,
       rarityLabel: rarityFor(c.trackedRank).label,
       habitat: creature.zone,
     },
     market: { ...marketModifiers(marketInputs(c)), speedMod: speedModFor(c.speedPercentile), moodSince: c.moodSince.toISOString() },
     stats: {
-      marketCapUsd: f(c.marketCapUsd, c.marketCapSol == null ? "Waiting for the first reading of this token's bonding curve." : "Waiting for the SOL/USD price."),
+      marketCapUsd: f(marketCapUsd, c.marketCapSol == null ? "Waiting for the first reading of this token's bonding curve." : "Waiting for the SOL/USD price."),
       marketCapSol: f(c.marketCapSol, c.curveComplete ? "The bonding curve is complete; the token now trades in a pool." : "Waiting for the first reading of this token's bonding curve."),
-      priceUsd: f(c.priceUsd, "Waiting for the first price reading."),
+      priceUsd: f(priceUsd, "Waiting for the first price reading."),
       change24hPct: f(
         c.change24hPct,
         hoursOld < TRACKING.snapshotChangeMinAgeHours
@@ -297,12 +313,13 @@ export interface RankRow {
 }
 
 export async function getRankings(sort: RankSort): Promise<RankRow[]> {
-  const coins = await db.coin.findMany({
-    where: { status: "ACTIVE", network: solanaNetwork() },
-    omit: { logoWebp: true },
-  });
+  const [coins, solUsd] = await Promise.all([
+    db.coin.findMany({ where: { status: "ACTIVE", network: solanaNetwork() }, omit: { logoWebp: true } }),
+    solUsdNow(),
+  ]);
   const rows = coins.map((c): RankRow => {
     const sp = speciesFor(c.speciesSeed);
+    const { marketCapUsd } = liveUsd(c, solUsd);
     return {
       id: c.id,
       ticker: c.ticker,
@@ -310,9 +327,9 @@ export async function getRankings(sort: RankSort): Promise<RankRow[]> {
       family: sp.family,
       variant: sp.variant,
       hasLogo: true,
-      tierLabel: tierFor(c.marketCapUsd)?.label ?? null,
+      tierLabel: tierFor(marketCapUsd)?.label ?? null,
       mood: c.mood as MoodId,
-      marketCapUsd: c.marketCapUsd,
+      marketCapUsd,
       change24hPct: c.change24hPct,
       hatchedAt: c.firstSeenAt.toISOString(),
       creatorShort: shortWallet(c.creatorWallet),

@@ -10,6 +10,8 @@ import { emblemAndPalette } from "@/lib/images";
 import { speciesFor } from "@/lib/market/species";
 import { bondingCurvePda, curveMarket, decodeBondingCurve, isPumpProgram } from "@/lib/solana/curve";
 import { withRpc } from "@/lib/solana/server";
+import { solUsdNow } from "@/lib/solUsd";
+import { PUMP_TOTAL_SUPPLY } from "@/config/data";
 import type { Launch } from "@/generated/prisma/client";
 
 const short = (w: string) => `${w.slice(0, 4)}…${w.slice(-4)}`;
@@ -49,6 +51,8 @@ async function hatch(launch: Launch) {
   const key = `${launch.network}:${launch.mint}`;
   const { webp, palette } = await emblemAndPalette(Buffer.from(launch.imagePng));
   const market = curveMarket(curve);
+  const solUsd = market ? await solUsdNow() : null;
+  const mcapUsd = market && solUsd ? market.marketCapSol * solUsd : null;
 
   try {
     await db.$transaction(async (tx) => {
@@ -73,6 +77,9 @@ async function hatch(launch: Launch) {
           logoWebp: new Uint8Array(webp),
           palette,
           marketCapSol: market?.marketCapSol ?? null,
+          marketCapUsd: mcapUsd,
+          priceUsd: mcapUsd != null ? mcapUsd / PUMP_TOTAL_SUPPLY : null,
+          marketUpdatedAt: mcapUsd != null ? new Date() : null,
           curveComplete: curve.complete,
           curveUpdatedAt: new Date(),
         },
