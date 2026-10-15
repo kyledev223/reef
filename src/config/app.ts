@@ -16,8 +16,8 @@ export const APP = {
  *   twitter: full link to the project's X account, e.g. "https://x.com/yourhandle"
  */
 export const OFFICIAL: { mint: string; twitter: string } = {
-  mint: "",
-  twitter: "",
+  mint: "mqWFS3fVZyTUdTqeMuVgWisCqTdByBiCELMZU3Rpump",
+  twitter: "https://x.com/reefworldfun",
 };
 
 /** pump.fun page for the official token, or null if no mint is set. */

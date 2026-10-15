@@ -327,10 +327,13 @@
 .icon-link:focus-visible, .ca-chip:focus-visible { outline: 2px solid #9ff6ff; outline-offset: 2px; }
 .x-mark { font-size: 16px; line-height: 1; }
 @media (max-width: 1100px) {
-  .ca-chip, .icon-link-label { display: none; }
+  .ca-copy, .icon-link-label { display: none; }
+  .ca-chip[data-copied] .ca-copy { display: inline; }
 }
 @media (max-width: 760px) {
   .icon-link { height: 30px; min-width: 30px; padding: 0 6px; }
+  .ca-chip { height: 30px; padding: 0 8px; gap: 6px; }
+  .ca-chip .mono { display: none; }
 }
 
 /* keep the header on one line: the nav centres in the space left by the brand and the right-hand items */

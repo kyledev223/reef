@@ -22,7 +22,7 @@ export function OfficialLinks() {
   return (
     <div className="official-links">
       {OFFICIAL.mint && (
-        <button className="ca-chip" onClick={copy} title={`Official token address: ${OFFICIAL.mint} (click to copy)`}>
+        <button className="ca-chip" onClick={copy} data-copied={copied || undefined} title={`Official token address: ${OFFICIAL.mint} (click to copy)`}>
           <span className="ca-label">CA</span>
           <span className="mono">{OFFICIAL.mint.slice(0, 4)}…{OFFICIAL.mint.slice(-4)}</span>
           <span aria-live="polite" className="ca-copy">{copied ? "Copied" : "Copy"}</span>
