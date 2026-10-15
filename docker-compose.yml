@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: reef
+      POSTGRES_PASSWORD: reef
+      POSTGRES_DB: reefworld
+    ports:
+      - "5433:5432"
+    volumes:
+      - reef-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reef -d reefworld"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  reef-db:

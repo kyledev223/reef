@@ -1,0 +1,213 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Lifecycle on the reef. Coins are never deleted: players may own their creatures.
+enum CoinStatus {
+  ACTIVE
+  HIDDEN // moderation
+}
+
+enum Mood {
+  CALM
+  FRENZY
+  SULKING
+}
+
+/// A creature on the reef: a pump.fun token hatched through the Hatchery and confirmed on-chain.
+model Coin {
+  id      String     @id @default(cuid())
+  /// "<network>:<mint>"
+  key     String     @unique
+  /// Seeds the species. Set once at creation and never changed, so a creature never transforms.
+  speciesSeed String
+  status  CoinStatus @default(ACTIVE)
+  statusReason String?
+  statusChangedAt DateTime @default(now())
+
+  network String // "devnet" | "mainnet-beta"
+  chain   String @default("solana")
+  /// Token mint address.
+  address String
+  creatorWallet String
+  launchSignature String
+
+  name        String
+  ticker      String
+  description String
+  twitter     String?
+  telegram    String?
+  website     String?
+  metadataUri String
+
+  logoWebp Bytes?
+  /// Dominant logo colours as hex strings, most dominant first.
+  palette  String[]
+
+  // Latest real values. Null = not available yet.
+  priceUsd         Float?
+  marketCapUsd     Float?
+  marketCapSol     Float?
+  marketUpdatedAt  DateTime?
+  /// pump.fun bonding curve finished: the coin moved to a regular pool.
+  curveComplete    Boolean  @default(false)
+  curveUpdatedAt   DateTime?
+
+  /// 24h change and where it came from ("dexscreener" or "snapshots").
+  change24hPct     Float?
+  change24hSource  String?
+
+  /// From DexScreener once it has indexed the token (mainnet only).
+  liquidityUsd     Float?
+  dexVolume24hUsd  Float?
+  dexPairCount     Int?
+  dexUpdatedAt     DateTime?
+
+  // Derived market layer (recomputed by the worker).
+  trackedRank      Int?
+  speedPercentile  Float?
+  mood             Mood     @default(CALM)
+  moodSince        DateTime @default(now())
+  moodInitialized  Boolean  @default(false)
+
+  /// When it hatched (token confirmed on-chain).
+  firstSeenAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  snapshots CoinSnapshot[]
+  events    WorldEvent[]
+  launch    Launch?
+
+  @@unique([network, address])
+  @@index([status, network])
+}
+
+enum SnapshotRes {
+  M // every snapshot run
+  H // hourly
+  D // daily
+}
+
+model CoinSnapshot {
+  id              BigInt      @id @default(autoincrement())
+  coinId          String
+  coin            Coin        @relation(fields: [coinId], references: [id], onDelete: Cascade)
+  at              DateTime    @default(now())
+  res             SnapshotRes @default(M)
+  priceUsd        Float?
+  marketCapUsd    Float?
+  marketCapSol    Float?
+  liquidityUsd    Float?
+  dexVolume24hUsd Float?
+
+  @@index([coinId, at])
+  @@index([res, at])
+}
+
+enum LaunchStatus {
+  PREPARED // metadata stored, waiting for the wallet to sign
+  SUBMITTED // signed transaction sent to Solana
+  CONFIRMED // token confirmed on-chain; creature hatched
+  FAILED
+}
+
+/// One attempt to hatch a creature (create a pump.fun token) through the Hatchery.
+model Launch {
+  id          String       @id @default(cuid())
+  status      LaunchStatus @default(PREPARED)
+  error       String?
+  wallet      String
+  network     String
+  ip          String?
+
+  name        String
+  ticker      String
+  description String
+  twitter     String?
+  telegram    String?
+  website     String?
+
+  /// Re-encoded upload (EXIF stripped), served for self-hosted metadata.
+  imagePng    Bytes
+  imageUrl    String
+  metadataUri String
+  /// "pinata" or "self"
+  metadataHost String
+
+  /// Mint public key; its keypair is generated in the player's browser and never sent to us.
+  mint        String       @unique
+  /// The exact transaction message the server built (base64); only this message may be relayed.
+  messageB64  String?
+  signature   String?      @unique
+  submittedAt DateTime?
+
+  coinId      String?      @unique
+  coin        Coin?        @relation(fields: [coinId], references: [id])
+
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([wallet, createdAt])
+  @@index([status])
+}
+
+/// One-time sign-in challenge for a wallet.
+model WalletNonce {
+  nonce     String    @id
+  wallet    String
+  message   String
+  expiresAt DateTime
+  usedAt    DateTime?
+}
+
+/// Signed-in wallet session (cookie holds the token; only its hash is stored).
+model WalletSession {
+  tokenHash String   @id
+  wallet    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([wallet])
+}
+
+/// Small shared values written by the worker (e.g. SOL/USD price).
+model KeyValue {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+/// Health of each upstream source, for "data as of" labels and backoff.
+model SourceStatus {
+  source              String    @id
+  lastAttemptAt       DateTime?
+  lastSuccessAt       DateTime?
+  lastError           String?
+  consecutiveFailures Int       @default(0)
+  nextAllowedAt       DateTime?
+}
+
+enum WorldEventKind {
+  HATCH
+  MOOD_CHANGE
+  GRADUATED
+  SYSTEM
+}
+
+model WorldEvent {
+  id      BigInt         @id @default(autoincrement())
+  at      DateTime       @default(now())
+  kind    WorldEventKind
+  coinId  String?
+  coin    Coin?          @relation(fields: [coinId], references: [id], onDelete: SetNull)
+  message String
+  data    Json?
+
+  @@index([at])
+}
