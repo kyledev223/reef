@@ -7,7 +7,7 @@ import { LAMPORTS_PER_SOL, PublicKey, Transaction } from "@solana/web3.js";
 import { sessionWallet } from "@/lib/auth/wallet";
 import { db } from "@/lib/db";
 import { checkSignedLaunchTx } from "@/lib/hatch/build";
-import { solanaConnection } from "@/lib/solana/server";
+import { RpcError, rpcErrorForPlayers, withRpc } from "@/lib/solana/server";
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
@@ -28,18 +28,22 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (problem) return Response.json({ error: problem }, { status: 400 });
 
   try {
-    const signature = await solanaConnection().sendRawTransaction(tx.serialize(), { skipPreflight: false, maxRetries: 5 });
+    const raw = tx.serialize();
+    const signature = await withRpc((c) => c.sendRawTransaction(raw, { skipPreflight: false, maxRetries: 5 }));
     await db.launch.update({ where: { id }, data: { status: "SUBMITTED", signature, submittedAt: new Date() } });
     return Response.json({ signature });
   } catch (err) {
+    if (err instanceof RpcError) {
+      console.error("[hatch/submit] rpc failed:", err.message);
+      return Response.json({ error: rpcErrorForPlayers(err), code: `rpc-${err.kind}`, retry: true }, { status: 503 });
+    }
     // SendTransactionError keeps the useful part ("no record of a prior credit", logs...) in extra fields.
     const e = err as { message?: string; transactionMessage?: string; transactionError?: { message?: string }; transactionLogs?: string[] };
     const msg = [e.message, e.transactionMessage, e.transactionError?.message, ...(e.transactionLogs ?? [])].filter(Boolean).join(" | ") || String(err);
     console.error("send failed", msg.slice(0, 500));
     const expired = /blockhash not found|block height exceeded/i.test(msg);
     // An empty or nearly empty wallet often fails with no detail at all; check the balance directly.
-    const lowBalance = await solanaConnection()
-      .getBalance(new PublicKey(wallet), "confirmed")
+    const lowBalance = await withRpc((c) => c.getBalance(new PublicKey(wallet), "confirmed"))
       .then((lamports) => lamports < 0.02 * LAMPORTS_PER_SOL)
       .catch(() => false);
     return Response.json(

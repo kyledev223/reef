@@ -9,7 +9,7 @@ import { db } from "@/lib/db";
 import { emblemAndPalette } from "@/lib/images";
 import { speciesFor } from "@/lib/market/species";
 import { bondingCurvePda, curveMarket, decodeBondingCurve, isPumpProgram } from "@/lib/solana/curve";
-import { solanaConnection } from "@/lib/solana/server";
+import { withRpc } from "@/lib/solana/server";
 import type { Launch } from "@/generated/prisma/client";
 
 const short = (w: string) => `${w.slice(0, 4)}…${w.slice(-4)}`;
@@ -20,8 +20,7 @@ async function fail(launch: Launch, error: string) {
 
 export async function finalizeLaunch(launch: Launch): Promise<Launch> {
   if (launch.status !== "SUBMITTED" || !launch.signature) return launch;
-  const conn = solanaConnection();
-  const { value } = await conn.getSignatureStatuses([launch.signature], { searchTransactionHistory: true });
+  const { value } = await withRpc((c) => c.getSignatureStatuses([launch.signature!], { searchTransactionHistory: true }));
   const st = value[0];
 
   if (st?.err) {
@@ -35,8 +34,7 @@ export async function finalizeLaunch(launch: Launch): Promise<Launch> {
 }
 
 async function hatch(launch: Launch) {
-  const conn = solanaConnection();
-  const curveAcc = await conn.getAccountInfo(bondingCurvePda(launch.mint), "confirmed");
+  const curveAcc = await withRpc((c) => c.getAccountInfo(bondingCurvePda(launch.mint), "confirmed"));
   const curve = curveAcc && isPumpProgram(curveAcc.owner) ? decodeBondingCurve(curveAcc.data) : null;
   if (!curve) {
     // Confirmed but no curve yet visible on this RPC node; try again on the next check.

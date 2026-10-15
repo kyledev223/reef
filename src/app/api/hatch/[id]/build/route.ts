@@ -1,7 +1,10 @@
 import { HATCH } from "@/config/balance";
 import { sessionWallet } from "@/lib/auth/wallet";
 import { db } from "@/lib/db";
-import { buildLaunchTx } from "@/lib/hatch/build";
+import { TokenBuilderError, buildLaunchTx } from "@/lib/hatch/build";
+import { RpcError, rpcErrorForPlayers } from "@/lib/solana/server";
+
+export const maxDuration = 30;
 
 /** Step 2: build (or rebuild with a fresh blockhash) the create transaction for the wallet to sign. */
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -18,7 +21,14 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     await db.launch.update({ where: { id }, data: { messageB64: built.message } });
     return Response.json({ tx: built.tx, estimatedCostSol: built.estimatedCostSol, simulationError: built.simulationError, network: launch.network });
   } catch (err) {
-    console.error("build failed", err);
-    return Response.json({ error: "Couldn't reach Solana to build the transaction. Please try again." }, { status: 502 });
+    // Logged in full for the site owner (Vercel → Logs); players get a plain explanation and a code.
+    console.error("[hatch/build] failed:", err);
+    if (err instanceof RpcError) {
+      return Response.json({ error: rpcErrorForPlayers(err), code: `rpc-${err.kind}` }, { status: 503 });
+    }
+    if (err instanceof TokenBuilderError) {
+      return Response.json({ error: "The token builder isn't working on the server right now. Please try again later.", code: "token-builder" }, { status: 500 });
+    }
+    return Response.json({ error: "Something went wrong preparing the transaction. Please try again.", code: "build-failed" }, { status: 500 });
   }
 }

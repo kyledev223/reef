@@ -4,7 +4,7 @@
  */
 import { db } from "@/lib/db";
 import { bondingCurvePda, curveMarket, decodeBondingCurve, isPumpProgram } from "@/lib/solana/curve";
-import { solanaConnection, solanaNetwork } from "@/lib/solana/server";
+import { solanaNetwork, withRpc } from "@/lib/solana/server";
 import { fetchSolPriceUsd } from "@/lib/sources/coingecko";
 import { SOURCES, addEvent, getSolUsd, log, withSource } from "../lib";
 
@@ -24,10 +24,9 @@ export async function runCurves() {
   if (coins.length === 0) return true;
   const solUsd = await getSolUsd();
   const ok = await withSource(SOURCES.curves, async () => {
-    const conn = solanaConnection();
     for (let i = 0; i < coins.length; i += 100) {
       const batch = coins.slice(i, i + 100);
-      const infos = await conn.getMultipleAccountsInfo(batch.map((c) => bondingCurvePda(c.address)), "confirmed");
+      const infos = await withRpc((conn) => conn.getMultipleAccountsInfo(batch.map((c) => bondingCurvePda(c.address)), "confirmed"));
       for (let j = 0; j < batch.length; j++) {
         const coin = batch[j];
         const info = infos[j];

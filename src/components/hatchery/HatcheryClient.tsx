@@ -98,8 +98,8 @@ function HatcheryForm({ config }: { config: HatchConfig }) {
 
   const build = useCallback(async (launchId: string) => {
     setPhase({ k: "working", label: "Preparing the transaction…" });
-    const b = await postJson<{ tx: string; estimatedCostSol: number | null; simulationError: string | null; error?: string }>(`/api/hatch/${launchId}/build`);
-    if (!b.ok) throw new Error(b.data.error ?? "Couldn't prepare the transaction.");
+    const b = await postJson<{ tx: string; estimatedCostSol: number | null; simulationError: string | null; error?: string; code?: string }>(`/api/hatch/${launchId}/build`);
+    if (!b.ok) throw new Error(`${b.data.error ?? "Couldn't prepare the transaction."}${b.data.code ? ` (error code: ${b.data.code})` : ""}`);
     setPhase({ k: "review", launchId, tx: b.data.tx, cost: b.data.estimatedCostSol, simError: b.data.simulationError });
   }, []);
 

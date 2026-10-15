@@ -56,11 +56,13 @@ never holds keys or funds and never buys tokens.
    | `SOLANA_NETWORK` | `mainnet-beta` for real tokens, or `devnet` for testing |
    | `SITE_URL` | your site's public URL, e.g. `https://your-project.vercel.app` |
    | `CRON_SECRET` | any long random string (protects `/api/cron`) |
-   | `SOLANA_RPC_URL` | recommended for mainnet: a dedicated RPC (Helius, QuickNode, Triton…); the public one is rate-limited |
+   | `SOLANA_RPC_URL` | **strongly recommended**: a dedicated RPC, e.g. `https://mainnet.helius-rpc.com/?api-key=…` (Helius has a free tier). Several can be listed, comma-separated. Without it the public endpoint is used, which is rate-limited and often refuses requests from Vercel |
    | `COINGECKO_API_KEY` | optional (SOL price) |
    | `PINATA_JWT` | optional backup for token metadata storage |
 
 4. **Deploy.** After the first deploy, set `SITE_URL` to the real URL if you didn't know it yet, and redeploy.
+5. **Check it:** open `https://your-site/api/health`. It tests the database, each Solana RPC endpoint, the pump.fun
+   SDK and pump.fun's upload service from the server, and lists hints for anything that fails.
 
 **Keeping data fresh without a server.** There's no long-running worker on Vercel. Instead:
 - Each time someone loads the city, the jobs that are due (bonding curves, SOL price, DexScreener, snapshots)

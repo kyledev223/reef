@@ -10,14 +10,23 @@ import {
   ComputeBudgetProgram, LAMPORTS_PER_SOL, PublicKey, Transaction, VersionedTransaction, type TransactionInstruction,
 } from "@solana/web3.js";
 import { HATCH } from "@/config/balance";
-import { solanaConnection } from "@/lib/solana/server";
+import { withRpc } from "@/lib/solana/server";
 import { pumpSdk } from "./pumpSdk";
 import type { Launch } from "@/generated/prisma/client";
 
+/** The pump.fun SDK failed to load or build the instruction (a server problem, not Solana). */
+export class TokenBuilderError extends Error {}
+
 /** The one pump.fun instruction a launch may contain. Deterministic for a given launch. */
-export function createInstructionFor(launch: Launch): Promise<TransactionInstruction> {
+export async function createInstructionFor(launch: Launch): Promise<TransactionInstruction> {
   const wallet = new PublicKey(launch.wallet);
-  return pumpSdk().PUMP_SDK.createV2Instruction({
+  let sdk: ReturnType<typeof pumpSdk>;
+  try {
+    sdk = pumpSdk();
+  } catch (err) {
+    throw new TokenBuilderError(`pump.fun SDK failed to load: ${err instanceof Error ? err.message : err}`);
+  }
+  return sdk.PUMP_SDK.createV2Instruction({
     mint: new PublicKey(launch.mint),
     name: launch.name,
     symbol: launch.ticker,
@@ -40,10 +49,9 @@ export interface BuiltLaunchTx {
 }
 
 export async function buildLaunchTx(launch: Launch): Promise<BuiltLaunchTx> {
-  const conn = solanaConnection();
   const wallet = new PublicKey(launch.wallet);
   const create = await createInstructionFor(launch);
-  const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash("confirmed");
+  const { blockhash, lastValidBlockHeight } = await withRpc((c) => c.getLatestBlockhash("confirmed"));
   const tx = new Transaction({ feePayer: wallet, blockhash, lastValidBlockHeight }).add(
     ComputeBudgetProgram.setComputeUnitLimit({ units: HATCH.computeUnitLimit }),
     ComputeBudgetProgram.setComputeUnitPrice({ microLamports: HATCH.computeUnitPriceMicroLamports }),
@@ -56,13 +64,13 @@ export async function buildLaunchTx(launch: Launch): Promise<BuiltLaunchTx> {
   let simulationError: string | null = null;
   try {
     const [before, sim, fee] = await Promise.all([
-      conn.getBalance(wallet, "confirmed"),
-      conn.simulateTransaction(new VersionedTransaction(message), {
+      withRpc((c) => c.getBalance(wallet, "confirmed")),
+      withRpc((c) => c.simulateTransaction(new VersionedTransaction(message), {
         sigVerify: false,
         replaceRecentBlockhash: false,
         accounts: { encoding: "base64", addresses: [wallet.toBase58()] },
-      }),
-      conn.getFeeForMessage(message, "confirmed"),
+      })),
+      withRpc((c) => c.getFeeForMessage(message, "confirmed")),
     ]);
     if (sim.value.err) {
       const logs = (sim.value.logs ?? []).join("\n");
